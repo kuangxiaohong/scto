@@ -1,0 +1,62 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+#ifndef _SMX_H_
+#define _SMX_H_
+
+/*SMX register base address*/
+#define SMX_BASE_ADDR				(0x28220000UL)
+/*SMX DMA register base address*/
+#define DMA_BASE_ADDR				(0x100)
+/*SM4 register base address*/
+#define SKE_BASE_ADDR				(0x1000)
+/*SM3 register base address*/
+#define HASH_BASE_ADDR				(0x2000)
+/*TRNG register base address*/
+#define TRNG_BASE_ADDR				(0x3000)
+/*PKE register base address*/
+#define PKE_BASE_ADDR				(0x5000)
+
+
+#define PHYTIUM_DMA_BUF_SIZE             (0x100000)
+
+static inline u32 swap32(u32 val)
+{
+	__asm__("rev %w[dst], %w[src]":[dst]"=r"(val):[src]"r"(val));
+	return val;
+}
+
+#define GET_UINT32_BE(n, b, i)				\
+	do {						\
+		(n) = swap32(*((u32*)&(b)[(i)]));\
+	} while (0)
+
+#define PUT_UINT32_BE(n, b, i)				\
+	do {						\
+		*((u32*)&(b)[(i)]) = swap32((n));		\
+	} while (0)
+
+
+static inline void smx_reverse_word(const void *in, void *out, u32 wordlen)
+{
+	u32 i;
+	const u32 *input = in;
+	u32 *output = out;
+
+	for(i = 0; i < wordlen; i++)
+		output[i] = swap32(input[i]);
+}
+
+static inline void smx_dma_reverse_word(const void *in, void *out, u32 wordlen)
+{
+	u32 i, j, tmp;
+	const u32 *input = in;
+	u32 *output = out;
+
+	for (i = 0; i < wordlen; i += 4){
+		for(j = 0; j < 2; j++){
+			tmp = input[i + j];
+			output[i + j] = swap32(input[i + 0x3 - j]);
+			output[i + 0x3 - j] = swap32(tmp);
+		}
+	}
+}
+#endif
