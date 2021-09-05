@@ -16,10 +16,12 @@
 #include <linux/io.h>
 #include <linux/crypto.h>
 #include <asm/cacheflush.h>
-#include <crypto/hmac.h>
 #include "smx_common.h"
 #include "sm3_phytium.h"
 #include "phytium_scto.h"
+
+#define HMAC_IPAD_VALUE 0x36
+#define HMAC_OPAD_VALUE 0x5c
 
 static void sm3_init(struct sm3_context *ctx)
 {
