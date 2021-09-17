@@ -497,7 +497,7 @@ static int scto_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, &scto);
 
-	printk(KERN_INFO"scto probe success!\n");
+	printk(KERN_INFO"V2.0 scto probe success!\n");
 
 	return 0;
 
