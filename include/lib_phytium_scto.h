@@ -3,4 +3,5 @@
 void *mem_alloc(int *desc_id);
 void mem_free(int desc_id);
 int lib_scto_init(void);
+int get_rand_data(unsigned char *buf, int len);
 #endif

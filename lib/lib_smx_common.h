@@ -20,13 +20,17 @@
 #include "openssl/evp.h"
 
 
+//256, 512, 1024, 2048, 4096, 8192, 16384, 32768
+#define SCTO_DESC_NUM	(16384)
+//4096, 8192, 16384, 32768, 65536
+#define PER_DESC_DMA_BUF_SIZE	(65536)
+
+
+
 
 #define MAGIC_NUM    'p'
 #define SCTO_SM3     _IO(MAGIC_NUM, 0)
 #define SCTO_SM4     _IO(MAGIC_NUM, 1)
-
-
-#define PHYTIUM_DMA_BUF_SIZE             (0x40000)
 
 #define unlikely(x)    (__builtin_expect(!!(x), 0))
 #define likely(x)    (__builtin_expect(!!(x), 1))
@@ -133,7 +137,7 @@ typedef struct{
 	volatile int *user_count;
 	uint32_t *v_dma_buf;
 	EVP_CIPHER_CTX evp_cipher_ctx;
-	char data[0];
+	char data[128];
 }phytium_sm4_context;
 
 typedef struct{
@@ -144,13 +148,22 @@ typedef struct{
 	};
 }__attribute__((aligned(512))) phytium_scto_context;
 
-typedef struct {
+typedef struct{
 	uint32_t counter;
 }__attribute__((aligned(64))) mepool_t;
 
-extern int scto_fd;
-extern uint64_t *common_info_start;
-extern phytium_scto_context *desc_start;
+typedef struct{
+	uint32_t num;
+	uint32_t alloc_index;
+	uint32_t free_index;
+	uint32_t counter[0];
+}per_thread_mepool_t;
+
+extern int phytium_scto_fd;
+extern uint64_t *phytium_common_info_start;
+extern phytium_scto_context *phytium_desc_start[];
+extern int phytium_per_desc_dma_buf_size;
+
 
 static inline uint32_t swap32(uint32_t val)
 {

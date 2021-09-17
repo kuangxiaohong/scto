@@ -64,23 +64,17 @@ void cpu_bind(pthread_t tid, int cpu)
 static int get_random_data(void *buf, uint32_t size)
 {
 	long len, offset;
-	int fd = open("/dev/random", 0);
-	if(fd < 0){
-		printf("%s open dev fail!\n", __func__);
-		return fd;
-	}
 
 restart:
 	offset = 0;
 	do{
-		len = read(fd, buf + offset, size - offset);
+		len = get_rand_data(buf + offset, size - offset);
 		offset += len;
 	}while((offset < size) && (len >= 0));
 	
 	if(offset != (long)size){
 		printf("read random dev fail!offset:%ld size;%u\n", offset, size);
-		close(fd);
-		return fd;
+		return -1;
 	}
 
 	for(offset = 0; offset < size; offset ++){
@@ -99,8 +93,6 @@ restart:
 		}
 		printf("\n");
 	}
-
-	close(fd);
 
 	return 0;
 }
@@ -137,7 +129,6 @@ static long get_gmssl_result(const char *cmd, void *buf, uint32_t size)
 	return offset;
 }
 
-#define SPEED_TEST  1
 #if 1
 int sm3_dgst_test(int testsize, int cpuid)
 {
@@ -148,44 +139,47 @@ int sm3_dgst_test(int testsize, int cpuid)
 	char input[BUF_SIZE] = {0}, output[BUF_SIZE] = {0}, cmpbuf[BUF_SIZE] = {0};
 	char cmd[1024];
 	EVP_MD_CTX *ctx = NULL;
+	int size, offset;
 
 	memcpy(input, randomdata[cpuid], testsize);
-#if SPEED_TEST
-	gettimeofday( &start, NULL );
-	for(i = 0; i < test_num; i++){
-		sm3_desc_id = -1;
-		phytium_sm3_dma_init(&sm3_desc_id);
-		phytium_sm3_dma_update(sm3_desc_id, input, testsize);
-		phytium_sm3_dma_final(sm3_desc_id, output);
-		if(sm3_desc_id > 0)
-			mem_free(sm3_desc_id);
-		multestnum[cpuid][0]++;
-	}
-	gettimeofday( &end, NULL );
-	
-    time = ( end.tv_sec  - start.tv_sec  ) * 1000000ul
-          + ( end.tv_usec - start.tv_usec );
-
-	if(test_time)
-		printf("scto dgst success, testnum:%d, testsize:%d, speed；%ld MBps\n", test_num, testsize, (long)test_num * testsize/time);
-#else
-		sm3_desc_id = -1;
-		phytium_sm3_dma_init(&sm3_desc_id);
-		int size = testsize;
-		int offset = 0;
-		i = 0;
-		while(size){
-			get_random_data(&i, 2);
-			if(i > size)
-				i = size;
-			phytium_sm3_dma_update(sm3_desc_id, input + offset, i);
-			size -= i;
-			offset += i;
+	if(multestsize){
+		gettimeofday( &start, NULL );
+		for(i = 0; i < test_num; i++){
+			sm3_desc_id = -1;
+			while(phytium_sm3_dma_init(&sm3_desc_id)){
+			}
+			phytium_sm3_dma_update(sm3_desc_id, input, testsize);
+			phytium_sm3_dma_final(sm3_desc_id, output);
+			if(sm3_desc_id > 0)
+				mem_free(sm3_desc_id);
+			multestnum[cpuid][0]++;
 		}
-		phytium_sm3_dma_final(sm3_desc_id, output);
-		if(sm3_desc_id > 0)
-			mem_free(sm3_desc_id);
-#endif
+		gettimeofday( &end, NULL );
+		
+	    time = ( end.tv_sec  - start.tv_sec  ) * 1000000ul
+	          + ( end.tv_usec - start.tv_usec );
+
+		if(test_time)
+			printf("scto dgst success, testnum:%d, testsize:%d, speed；%ld MBps\n", test_num, testsize, (long)test_num * testsize/time);
+	}else{
+			sm3_desc_id = -1;
+			while(phytium_sm3_dma_init(&sm3_desc_id)){
+			}
+			size = testsize;
+			offset = 0;
+			i = 0;
+			while(size){
+				get_random_data(&i, 2);
+				if(i > size)
+					i = size;
+				phytium_sm3_dma_update(sm3_desc_id, input + offset, i);
+				size -= i;
+				offset += i;
+			}
+			phytium_sm3_dma_final(sm3_desc_id, output);
+			if(sm3_desc_id > 0)
+				mem_free(sm3_desc_id);
+	}
 	ctx = EVP_MD_CTX_new();
 	if(ctx == NULL){
 		printf("EVP_MD_CTX_new fail!\n");
@@ -224,30 +218,33 @@ int sm4_cbc_test(int testsize, int cpuid)
 	int i;
 	phytium_sm4_context ctx;
 	EVP_CIPHER_CTX *ectx;
+	int size, offset;
 
 	memcpy(input, randomdata[cpuid], testsize);
-#if SPEED_TEST
-	gettimeofday( &start, NULL );
-	for(i = 0; i < test_num; i++){
-		sm4_desc_id = -1;
-		phytium_sm4_init(&sm4_desc_id, SM4_MODE_CBC, SM4_CRYPTO_ENCRYPT, std_key, std_iv);
-		phytium_sm4_update(sm4_desc_id, input, testsize, output);
-		if(sm4_desc_id > 0)
-			mem_free(sm4_desc_id);
-		multestnum[cpuid][0]++;
-	}
-	gettimeofday( &end, NULL );
-	
-    time = ( end.tv_sec  - start.tv_sec  ) * 1000000ul
-          + ( end.tv_usec - start.tv_usec );
+	if(multestsize){
+		gettimeofday( &start, NULL );
+		for(i = 0; i < test_num; i++){
+			sm4_desc_id = -1;
+			while(phytium_sm4_init(&sm4_desc_id, SM4_MODE_CBC, SM4_CRYPTO_ENCRYPT, std_key, std_iv)){
+			}
+			phytium_sm4_update(sm4_desc_id, input, testsize, output);
+			if(sm4_desc_id > 0)
+				mem_free(sm4_desc_id);
+			multestnum[cpuid][0]++;
+		}
+		gettimeofday( &end, NULL );
+		
+	    time = ( end.tv_sec  - start.tv_sec  ) * 1000000ul
+	          + ( end.tv_usec - start.tv_usec );
 
-	if(test_time)
-		printf("scto cbc enc success, testnum:%d, testsize:%d, speed；%ld MBps\n", test_num, testsize, (long)test_num * testsize/time);
-#else
+		if(test_time)
+			printf("scto cbc enc success, testnum:%d, testsize:%d, speed；%ld MBps\n", test_num, testsize, (long)test_num * testsize/time);
+	}else{
 		sm4_desc_id = -1;
-		phytium_sm4_init(&sm4_desc_id, SM4_MODE_CBC, SM4_CRYPTO_ENCRYPT, std_key, std_iv);
-		int size = testsize;
-		int offset = 0;
+		while(phytium_sm4_init(&sm4_desc_id, SM4_MODE_CBC, SM4_CRYPTO_ENCRYPT, std_key, std_iv)){
+		}
+		size = testsize;
+		offset = 0;
 		i = 0;
 		while(size){
 			get_random_data(&i, 2);
@@ -260,7 +257,7 @@ int sm4_cbc_test(int testsize, int cpuid)
 		}
 		if(sm4_desc_id > 0)
 			mem_free(sm4_desc_id);
-#endif	
+	}	
 	ectx = EVP_CIPHER_CTX_new();
 	if(ectx == NULL){
 		printf("EVP_CIPHER_CTX_new fail!\n");
@@ -275,40 +272,43 @@ int sm4_cbc_test(int testsize, int cpuid)
 		printf("sm4 cbc encrypt error!\n");
 		return -1;
 	}
-#if SPEED_TEST
-	gettimeofday( &start, NULL );
-	for(i = 0; i < test_num; i++){
+
+	if(multestsize){
+		gettimeofday( &start, NULL );
+		for(i = 0; i < test_num; i++){
+			sm4_desc_id = -1;
+			while(phytium_sm4_init(&sm4_desc_id, SM4_MODE_CBC, SM4_CRYPTO_DECRYPT, std_key, std_iv)){
+			}
+			phytium_sm4_update(sm4_desc_id, output, testsize, cmpbuf);
+			if(sm4_desc_id > 0)
+				mem_free(sm4_desc_id);
+		}
+		gettimeofday( &end, NULL );
+		
+	    time = ( end.tv_sec  - start.tv_sec  ) * 1000000ul
+	          + ( end.tv_usec - start.tv_usec );
+
+		if(test_time)
+			printf("scto cbc dec success, testnum:%d, testsize:%d, speed；%ld MBps\n", test_num, testsize, (long)test_num * testsize/time);
+	}else{
 		sm4_desc_id = -1;
-		phytium_sm4_init(&sm4_desc_id, SM4_MODE_CBC, SM4_CRYPTO_DECRYPT, std_key, std_iv);
-		phytium_sm4_update(sm4_desc_id, output, testsize, cmpbuf);
+		while(phytium_sm4_init(&sm4_desc_id, SM4_MODE_CBC, SM4_CRYPTO_DECRYPT, std_key, std_iv)){
+		}
+		size = testsize;
+		offset = 0;
+		i = 0;
+		while(size){
+			get_random_data(&i, 2);
+			i &= 0xFFF0;
+			if(i > size)
+				i = size;
+			phytium_sm4_update(sm4_desc_id, output + offset, i, cmpbuf + offset);
+			size -= i;
+			offset += i;
+		}
 		if(sm4_desc_id > 0)
 			mem_free(sm4_desc_id);
-	}
-	gettimeofday( &end, NULL );
-	
-    time = ( end.tv_sec  - start.tv_sec  ) * 1000000ul
-          + ( end.tv_usec - start.tv_usec );
-
-	if(test_time)
-		printf("scto cbc dec success, testnum:%d, testsize:%d, speed；%ld MBps\n", test_num, testsize, (long)test_num * testsize/time);
-#else
-	sm4_desc_id = -1;
-	phytium_sm4_init(&sm4_desc_id, SM4_MODE_CBC, SM4_CRYPTO_DECRYPT, std_key, std_iv);
-	size = testsize;
-	offset = 0;
-	i = 0;
-	while(size){
-		get_random_data(&i, 2);
-		i &= 0xFFF0;
-		if(i > size)
-			i = size;
-		phytium_sm4_update(sm4_desc_id, output + offset, i, cmpbuf + offset);
-		size -= i;
-		offset += i;
-	}
-	if(sm4_desc_id > 0)
-		mem_free(sm4_desc_id);
-#endif	
+	}	
 	
 	if(memcmp(input, cmpbuf, testsize)){
 		printf("sm4 cbc decrypt error!\n");
@@ -330,43 +330,44 @@ int sm4_ecb_test(int testsize, int cpuid)
 	int i;
 	int sm4_desc_id = -1;
 	EVP_CIPHER_CTX *ectx;
+	int size, offset;
 
 	memcpy(input, randomdata[cpuid], testsize);
-#if SPEED_TEST
-	gettimeofday( &start, NULL );
-	for(i = 0; i < test_num; i++){
+	if(multestsize){
+		gettimeofday( &start, NULL );
+		for(i = 0; i < test_num; i++){
+			sm4_desc_id = -1;
+			while(phytium_sm4_init(&sm4_desc_id, SM4_MODE_ECB, SM4_CRYPTO_ENCRYPT, std_key, NULL)){}
+			phytium_sm4_update(sm4_desc_id, input, testsize, output);
+			if(sm4_desc_id > 0)
+				mem_free(sm4_desc_id);
+			multestnum[cpuid][0]++;
+		}
+		gettimeofday( &end, NULL );
+		
+	    time = ( end.tv_sec  - start.tv_sec  ) * 1000000ul
+	          + ( end.tv_usec - start.tv_usec );
+
+		if(test_time)
+			printf("TA ecb enc success, testnum:%d, testsize:%d, speed；%ld MBps\n", test_num, testsize, (long)test_num * testsize/time);
+	}else{
 		sm4_desc_id = -1;
-		phytium_sm4_init(&sm4_desc_id, SM4_MODE_ECB, SM4_CRYPTO_ENCRYPT, std_key, NULL);
-		phytium_sm4_update(sm4_desc_id, input, testsize, output);
+		while(phytium_sm4_init(&sm4_desc_id, SM4_MODE_ECB, SM4_CRYPTO_ENCRYPT, std_key, NULL)){}
+		size = testsize;
+		offset = 0;
+		i = 0;
+		while(size){
+			get_random_data(&i, 2);
+			i &= 0xFFF0;
+			if(i > size)
+				i = size;
+			phytium_sm4_update(sm4_desc_id, input + offset, i, output + offset);
+			size -= i;
+			offset += i;
+		}
 		if(sm4_desc_id > 0)
 			mem_free(sm4_desc_id);
-		multestnum[cpuid][0]++;
 	}
-	gettimeofday( &end, NULL );
-	
-    time = ( end.tv_sec  - start.tv_sec  ) * 1000000ul
-          + ( end.tv_usec - start.tv_usec );
-
-	if(test_time)
-		printf("TA ecb enc success, testnum:%d, testsize:%d, speed；%ld MBps\n", test_num, testsize, (long)test_num * testsize/time);
-#else
-	sm4_desc_id = -1;
-	phytium_sm4_init(&sm4_desc_id, SM4_MODE_ECB, SM4_CRYPTO_ENCRYPT, std_key, NULL);
-	int size = testsize;
-	int offset = 0;
-	i = 0;
-	while(size){
-		get_random_data(&i, 2);
-		i &= 0xFFF0;
-		if(i > size)
-			i = size;
-		phytium_sm4_update(sm4_desc_id, input + offset, i, output + offset);
-		size -= i;
-		offset += i;
-	}
-	if(sm4_desc_id > 0)
-		mem_free(sm4_desc_id);
-#endif	
 	
 	ectx = EVP_CIPHER_CTX_new();
 	if(ectx == NULL){
@@ -381,40 +382,41 @@ int sm4_ecb_test(int testsize, int cpuid)
 		printf("sm4 ecb encrypt error!\n");
 		return -1;
 	}
-#if SPEED_TEST
-	gettimeofday( &start, NULL );
-	for(i = 0; i < test_num; i++){
+
+	if(multestsize){
+		gettimeofday( &start, NULL );
+		for(i = 0; i < test_num; i++){
+			sm4_desc_id = -1;
+			while(phytium_sm4_init(&sm4_desc_id, SM4_MODE_ECB, SM4_CRYPTO_DECRYPT, std_key, NULL)){}
+			phytium_sm4_update(sm4_desc_id, output, testsize, cmpbuf);
+			if(sm4_desc_id > 0)
+				mem_free(sm4_desc_id);
+		}
+		gettimeofday( &end, NULL );
+		
+	    time = ( end.tv_sec  - start.tv_sec  ) * 1000000ul
+	          + ( end.tv_usec - start.tv_usec );
+
+		if(test_time)
+			printf("scto ecb dec success, testnum:%d, testsize:%d, speed；%ld MBps\n", test_num, testsize, (long)test_num * testsize/time);
+	}else{
 		sm4_desc_id = -1;
-		phytium_sm4_init(&sm4_desc_id, SM4_MODE_ECB, SM4_CRYPTO_DECRYPT, std_key, NULL);
-		phytium_sm4_update(sm4_desc_id, output, testsize, cmpbuf);
+		while(phytium_sm4_init(&sm4_desc_id, SM4_MODE_ECB, SM4_CRYPTO_DECRYPT, std_key, NULL)){}
+		size = testsize;
+		offset = 0;
+		i = 0;
+		while(size){
+			get_random_data(&i, 2);
+			i &= 0xFFF0;
+			if(i > size)
+				i = size;
+			phytium_sm4_update(sm4_desc_id, output + offset, i, cmpbuf + offset);
+			size -= i;
+			offset += i;
+		}
 		if(sm4_desc_id > 0)
 			mem_free(sm4_desc_id);
-	}
-	gettimeofday( &end, NULL );
-	
-    time = ( end.tv_sec  - start.tv_sec  ) * 1000000ul
-          + ( end.tv_usec - start.tv_usec );
-
-	if(test_time)
-		printf("scto ecb dec success, testnum:%d, testsize:%d, speed；%ld MBps\n", test_num, testsize, (long)test_num * testsize/time);
-#else
-	sm4_desc_id = -1;
-	phytium_sm4_init(&sm4_desc_id, SM4_MODE_ECB, SM4_CRYPTO_DECRYPT, std_key, NULL);
-	size = testsize;
-	offset = 0;
-	i = 0;
-	while(size){
-		get_random_data(&i, 2);
-		i &= 0xFFF0;
-		if(i > size)
-			i = size;
-		phytium_sm4_update(sm4_desc_id, output + offset, i, cmpbuf + offset);
-		size -= i;
-		offset += i;
-	}
-	if(sm4_desc_id > 0)
-		mem_free(sm4_desc_id);
-#endif	
+	}	
 	
 	if(memcmp(input, cmpbuf, testsize)){
 		printf("sm4 ecb decrypt error!\n");
@@ -440,32 +442,33 @@ int sm4_ctr_test(int testsize, int cpuid)
 	int i;
 	int sm4_desc_id = -1;
 	EVP_CIPHER_CTX *ectx;
+	int size, offset;
 
 	//memset(std_iv, 0xff, 16);
 	memcpy(input, randomdata[cpuid], testsize);
-#if SPEED_TEST
-	gettimeofday( &start, NULL );
-	for(i = 0; i < test_num; i++){
-		sm4_desc_id = -1;
-		phytium_sm4_init(&sm4_desc_id, SM4_MODE_CTR, SM4_CRYPTO_ENCRYPT, std_key, std_iv);
-		phytium_sm4_update(sm4_desc_id, input, testsize, output);
-		if(sm4_desc_id > 0)
-			mem_free(sm4_desc_id);
-		multestnum[cpuid][0]++;
-	}
-	gettimeofday( &end, NULL );
-	
-	
-    time = ( end.tv_sec  - start.tv_sec  ) * 1000000ul
-          + ( end.tv_usec - start.tv_usec );
+	if(multestsize){
+		gettimeofday( &start, NULL );
+		for(i = 0; i < test_num; i++){
+			sm4_desc_id = -1;
+			while(phytium_sm4_init(&sm4_desc_id, SM4_MODE_CTR, SM4_CRYPTO_ENCRYPT, std_key, std_iv)){}
+			phytium_sm4_update(sm4_desc_id, input, testsize, output);
+			if(sm4_desc_id > 0)
+				mem_free(sm4_desc_id);
+			multestnum[cpuid][0]++;
+		}
+		gettimeofday( &end, NULL );
 
-	if(test_time)
-		printf("scto ctr enc success, testnum:%d, testsize:%d, speed；%ld MBps\n", test_num, testsize, (long)test_num * testsize/time);
-#else
+
+		time = ( end.tv_sec  - start.tv_sec  ) * 1000000ul
+		      + ( end.tv_usec - start.tv_usec );
+
+		if(test_time)
+			printf("scto ctr enc success, testnum:%d, testsize:%d, speed；%ld MBps\n", test_num, testsize, (long)test_num * testsize/time);
+	}else{
 		sm4_desc_id = -1;
-		phytium_sm4_init(&sm4_desc_id, SM4_MODE_CTR, SM4_CRYPTO_ENCRYPT, std_key, std_iv);
-		int size = testsize;
-		int offset = 0;
+		while(phytium_sm4_init(&sm4_desc_id, SM4_MODE_CTR, SM4_CRYPTO_ENCRYPT, std_key, std_iv)){}
+		size = testsize;
+		offset = 0;
 		i = 0;
 		while(size){
 			get_random_data(&i, 2);
@@ -477,7 +480,7 @@ int sm4_ctr_test(int testsize, int cpuid)
 		}
 		if(sm4_desc_id > 0)
 			mem_free(sm4_desc_id);
-#endif	
+	}	
 	
 	ectx = EVP_CIPHER_CTX_new();
 	if(ectx == NULL){
@@ -493,39 +496,40 @@ int sm4_ctr_test(int testsize, int cpuid)
 		printf("sm4 ctr encrypt error!\n");
 		return -1;
 	}
-#if SPEED_TEST
-	gettimeofday( &start, NULL );
-	for(i = 0; i < test_num; i++){
+
+	if(multestsize){
+		gettimeofday( &start, NULL );
+		for(i = 0; i < test_num; i++){
+			sm4_desc_id = -1;
+			while(phytium_sm4_init(&sm4_desc_id, SM4_MODE_CTR, SM4_CRYPTO_ENCRYPT, std_key, std_iv)){}
+			phytium_sm4_update(sm4_desc_id, output, testsize, cmpbuf);
+			if(sm4_desc_id > 0)
+				mem_free(sm4_desc_id);
+		}
+		gettimeofday( &end, NULL );
+		
+	    time = ( end.tv_sec  - start.tv_sec  ) * 1000000ul
+	          + ( end.tv_usec - start.tv_usec );
+
+		if(test_time)
+			printf("scto ctr dec success, testnum:%d, testsize:%d, speed；%ld MBps\n", test_num, testsize, (long)test_num * testsize/time);
+	}else{
 		sm4_desc_id = -1;
-		phytium_sm4_init(&sm4_desc_id, SM4_MODE_CTR, SM4_CRYPTO_ENCRYPT, std_key, std_iv);
-		phytium_sm4_update(sm4_desc_id, output, testsize, cmpbuf);
+		while(phytium_sm4_init(&sm4_desc_id, SM4_MODE_CTR, SM4_CRYPTO_ENCRYPT, std_key, std_iv)){}
+		size = testsize;
+		offset = 0;
+		i = 0;
+		while(size){
+			get_random_data(&i, 2);
+			if(i > size)
+				i = size;
+			phytium_sm4_update(sm4_desc_id, output + offset, i, cmpbuf + offset);
+			size -= i;
+			offset += i;
+		}
 		if(sm4_desc_id > 0)
 			mem_free(sm4_desc_id);
-	}
-	gettimeofday( &end, NULL );
-	
-    time = ( end.tv_sec  - start.tv_sec  ) * 1000000ul
-          + ( end.tv_usec - start.tv_usec );
-
-	if(test_time)
-		printf("scto ctr dec success, testnum:%d, testsize:%d, speed；%ld MBps\n", test_num, testsize, (long)test_num * testsize/time);
-#else
-	sm4_desc_id = -1;
-	phytium_sm4_init(&sm4_desc_id, SM4_MODE_CTR, SM4_CRYPTO_ENCRYPT, std_key, std_iv);
-	size = testsize;
-	offset = 0;
-	i = 0;
-	while(size){
-		get_random_data(&i, 2);
-		if(i > size)
-			i = size;
-		phytium_sm4_update(sm4_desc_id, output + offset, i, cmpbuf + offset);
-		size -= i;
-		offset += i;
-	}
-	if(sm4_desc_id > 0)
-		mem_free(sm4_desc_id);
-#endif	
+	}	
 	
 	if(memcmp(input, cmpbuf, testsize)){
 		printf("sm4 ctr decrypt error!\n");
@@ -545,8 +549,7 @@ void * test(void*arg)
 	cpu_bind(tid[i], (i + 1) & 7);
 	int size = start_size;
 
-	//get_random_data(randomdata[i], test_size);
-	memset(randomdata[i], count[0]&0xFF, test_size);
+	get_random_data(randomdata[i], test_size);
 
 	while(running){
 		if(multestsize)
@@ -563,8 +566,7 @@ void * test(void*arg)
 #endif
 		size ++;
 		if(size > test_size){
-			//get_random_data(randomdata[i], test_size);
-			memset(randomdata[i], count[0]&0xFF, test_size);
+			get_random_data(randomdata[i], test_size);
 			size = start_size;
 		}
 		count[i]++;	
@@ -615,7 +617,7 @@ void print_help(void)
 	printf("-n  num     test_num\n");
 	printf("-l          test_size\n");
 	printf("-a  num     thread_num(1-8)\n");
-	printf("example: ./scto -s 2 -s 3 -s 4 -t -n 1000 -a 1\n");
+	printf("example: ./scto -s 5 -l 10000 -a 1\n");
 }
 
 static void signal_handler(int signal)
@@ -704,7 +706,7 @@ int main(int argc, char *argv[])
 		test_sm4_ctr = 1;
 	}
 
-	//signal(SIGINT, signal_handler);
+	signal(SIGINT, signal_handler);
 
 	ret = lib_scto_init();
 	if(ret < 0)

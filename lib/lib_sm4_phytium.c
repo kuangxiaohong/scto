@@ -18,7 +18,7 @@
 static int phytium_sm4_ecb(int desc_id, uint8_t*in, uint32_t len, uint8_t*out)
 {
 	long offset, buf_len;
-	phytium_sm4_context *ctx = &desc_start[desc_id].psm4_ctx;
+	phytium_sm4_context *ctx = &phytium_desc_start[desc_id / (0x400000 / sizeof(phytium_scto_context))][desc_id & ((0x400000 / sizeof(phytium_scto_context)) - 1)].psm4_ctx;
 
 	if(unlikely((len == 0) || (len & 0xf))){
 		return -1;
@@ -31,15 +31,15 @@ static int phytium_sm4_ecb(int desc_id, uint8_t*in, uint32_t len, uint8_t*out)
 
 	offset = 0;
 	while(len){	
-		if(likely(len <= PHYTIUM_DMA_BUF_SIZE)){
+		if(likely(len <= PER_DESC_DMA_BUF_SIZE)){
 			buf_len = len;
 		}else{
-			buf_len = PHYTIUM_DMA_BUF_SIZE;
+			buf_len = PER_DESC_DMA_BUF_SIZE;
 		}
 
 		smx_dma_reverse_word(in + offset, ctx->v_dma_buf, buf_len >> 2);
 
-		ioctl(scto_fd, SCTO_SM4, ((long)desc_id << 32) | buf_len);
+		ioctl(phytium_scto_fd, SCTO_SM4, ((long)desc_id << 32) | buf_len);
 
 		smx_dma_reverse_word(ctx->v_dma_buf, out + offset, buf_len >> 2);
 	
@@ -53,7 +53,7 @@ static int phytium_sm4_ecb(int desc_id, uint8_t*in, uint32_t len, uint8_t*out)
 static int phytium_sm4_cbc(int desc_id, uint8_t*in, uint32_t len, uint8_t*out)
 {
 	long offset, buf_len;
-	phytium_sm4_context *ctx = &desc_start[desc_id].psm4_ctx;
+	phytium_sm4_context *ctx = &phytium_desc_start[desc_id / (0x400000 / sizeof(phytium_scto_context))][desc_id & ((0x400000 / sizeof(phytium_scto_context)) - 1)].psm4_ctx;
 
 	if(unlikely((len == 0) || (len & 0xf))){
 		return -1;
@@ -66,15 +66,15 @@ static int phytium_sm4_cbc(int desc_id, uint8_t*in, uint32_t len, uint8_t*out)
 
 	offset = 0;
 	while(len){	
-		if(len <= PHYTIUM_DMA_BUF_SIZE){
+		if(len <= PER_DESC_DMA_BUF_SIZE){
 			buf_len = len;
 		}else{
-			buf_len = PHYTIUM_DMA_BUF_SIZE;
+			buf_len = PER_DESC_DMA_BUF_SIZE;
 		}
 
 		smx_dma_reverse_word(in + offset, ctx->v_dma_buf, buf_len >> 2);
 
-		ioctl(scto_fd, SCTO_SM4, ((long)desc_id << 32) | buf_len);
+		ioctl(phytium_scto_fd, SCTO_SM4, ((long)desc_id << 32) | buf_len);
 
 		if(ctx->cryptomode)
 			memcpy(ctx->evp_cipher_ctx.iv, in + offset + buf_len - 16, 16);
@@ -95,7 +95,7 @@ static int phytium_sm4_ctr(int desc_id, uint8_t*in, uint32_t len, uint8_t*out)
 	long offset = 0, buf_len, ctr_len, i;
 	uint8_t tmp, *iv;
 	uint32_t num;
-	phytium_sm4_context *ctx = &desc_start[desc_id].psm4_ctx;
+	phytium_sm4_context *ctx = &phytium_desc_start[desc_id / (0x400000 / sizeof(phytium_scto_context))][desc_id & ((0x400000 / sizeof(phytium_scto_context)) - 1)].psm4_ctx;
 
 	if(unlikely(len == 0)){
 		return 0;
@@ -116,15 +116,15 @@ static int phytium_sm4_ctr(int desc_id, uint8_t*in, uint32_t len, uint8_t*out)
 	len -= num;
 
 	while(len){	
-		if(likely(len <= PHYTIUM_DMA_BUF_SIZE)){
+		if(likely(len <= PER_DESC_DMA_BUF_SIZE)){
 			buf_len = len;
 		}else{
-			buf_len = PHYTIUM_DMA_BUF_SIZE;
+			buf_len = PER_DESC_DMA_BUF_SIZE;
 		}
 
 		smx_dma_reverse_word(in + offset, ctx->v_dma_buf, buf_len >> 2);
 
-		ioctl(scto_fd, SCTO_SM4, ((long)desc_id << 32) | buf_len);
+		ioctl(phytium_scto_fd, SCTO_SM4, ((long)desc_id << 32) | buf_len);
 
 		iv = (uint8_t*)ctx->evp_cipher_ctx.iv;
 		ctr_len = buf_len >> 4;
@@ -148,7 +148,7 @@ static int phytium_sm4_ctr(int desc_id, uint8_t*in, uint32_t len, uint8_t*out)
 			smx_dma_reverse_word(ctx->v_dma_buf, out + offset, (buf_len - ctr_len) >> 2);
 			if(ctr_len){
 				smx_dma_reverse_word(in + offset + (buf_len - ctr_len), ctx->v_dma_buf, ctr_len >> 2);
-				ioctl(scto_fd, SCTO_SM4, ((long)desc_id << 32) | ctr_len);
+				ioctl(phytium_scto_fd, SCTO_SM4, ((long)desc_id << 32) | ctr_len);
 				smx_dma_reverse_word(ctx->v_dma_buf, out + offset + (buf_len - ctr_len), ctr_len >> 2);
 				ctr_len >>= 4;
 				*(uint32_t*)(&iv[12]) = swap32(ctr_len);
@@ -182,13 +182,12 @@ int phytium_sm4_init(int *desc_id, uint32_t mode, uint32_t cryptomode, const uin
 	if(*desc_id <= 0){
 		dma_buf = mem_alloc(desc_id);
 		if(dma_buf == NULL){
-			printf("desc_id alloc fail!\n");
 			return -1;
 		}
 	}
 
-	desc_start[*desc_id].alg = ALG_SM4;
-	ctx = &desc_start[*desc_id].psm4_ctx;
+	phytium_desc_start[*desc_id / (0x400000 / sizeof(phytium_scto_context))][*desc_id & ((0x400000 / sizeof(phytium_scto_context)) - 1)].alg = ALG_SM4;
+	ctx = &phytium_desc_start[*desc_id / (0x400000 / sizeof(phytium_scto_context))][*desc_id & ((0x400000 / sizeof(phytium_scto_context)) - 1)].psm4_ctx;
 	switch(mode){
 		case SM4_MODE_ECB:
 			ctx->evp_cipher_ctx.cipher = EVP_sm4_ecb();
@@ -212,8 +211,8 @@ int phytium_sm4_init(int *desc_id, uint32_t mode, uint32_t cryptomode, const uin
 	ctx->evp_cipher_ctx.num = 0;
 
 	ctx->evp_cipher_ctx.buf_len = 0;
-    ctx->evp_cipher_ctx.final_used = 0;
-    ctx->evp_cipher_ctx.block_mask = ctx->evp_cipher_ctx.cipher->block_size - 1;
+	ctx->evp_cipher_ctx.final_used = 0;
+	ctx->evp_cipher_ctx.block_mask = ctx->evp_cipher_ctx.cipher->block_size - 1;
 	ctx->evp_cipher_ctx.cipher->init(&ctx->evp_cipher_ctx, key, iv, !cryptomode);
 	ctx->mode = mode;
 	ctx->cryptomode = cryptomode;
@@ -222,14 +221,14 @@ int phytium_sm4_init(int *desc_id, uint32_t mode, uint32_t cryptomode, const uin
 	smx_reverse_word(ctx->scto_key, ctx->scto_key, SM4_KEY_WORD_LEN);
 	if(dma_buf)
 		ctx->v_dma_buf = dma_buf;
-	ctx->user_count = (volatile int*)((long)common_info_start + 0x10000);
+	ctx->user_count = (volatile int*)((long)phytium_common_info_start + SCTO_DESC_NUM * 8 + 128);
 
 	return 0;
 }
 
 int phytium_sm4_update(int desc_id, uint8_t*in, uint32_t len, uint8_t*out)
 {
-	phytium_sm4_context *ctx = &desc_start[desc_id].psm4_ctx;
+	phytium_sm4_context *ctx = &phytium_desc_start[desc_id / (0x400000 / sizeof(phytium_scto_context))][desc_id & ((0x400000 / sizeof(phytium_scto_context)) - 1)].psm4_ctx;
 
 	switch(ctx->mode){
 		case SM4_MODE_ECB:

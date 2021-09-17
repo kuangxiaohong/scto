@@ -10,6 +10,7 @@
  *
  */
 
+
 #include <linux/io.h>
 #include <linux/delay.h>
 #include <linux/types.h>
@@ -19,6 +20,9 @@
 #include "smx_common.h"
 #include "sm4_phytium.h"
 #include "phytium_scto.h"
+
+#if SCTO_KERNEL_MODE
+
 
 
 extern struct scto_dev scto;
@@ -334,8 +338,6 @@ static inline int sm4_init(sm4_mode_e mode, int crypto, u32 *key, u8 *iv)
 
 void sm4_dma(long in, long out, u32 byteLen)
 {
-	mutex_lock(&scto.dma_lock);
-
 	//src addr
 	scto.dma_reg->saddr0 = (in >> 2)&0xFFFFFFFF;
 	scto.dma_reg->saddr1 = (in >> 34)&0x0FFF;
@@ -360,8 +362,6 @@ void sm4_dma(long in, long out, u32 byteLen)
 	do{
 		dsb(sy);
 	}while(!(scto.smx_reg->sr_2 & 1));
-
-	mutex_unlock(&scto.dma_lock);
 }
 
 int phytium_sm4_setkey(struct crypto_skcipher *tfm, const u8 *key, unsigned int keylen)
@@ -512,7 +512,7 @@ int phytium_sm4_ecb(struct skcipher_request *req, int cryptomode)
 		return -1;
 	}
 
-	if(unlikely((len < 128) || ((len < 1024) && (atomic_read(&scto.sm4_wait_count) > 1)))){
+	if(unlikely((len < 128) || ((len < 1024) && (atomic_read(&scto.wait_count) > 1)))){
 		if(cryptomode == SM4_CRYPTO_ENCRYPT)
 			sm4_crypt(req, sm4_crypt_ecb_enc);
 		else
@@ -531,7 +531,7 @@ int phytium_sm4_ecb(struct skcipher_request *req, int cryptomode)
 	}
 
 	offset = 0;
-	atomic_inc(&scto.sm4_wait_count);
+	atomic_inc(&scto.wait_count);
 	while(len){	
 		if(likely(len <= PHYTIUM_DMA_BUF_SIZE)){
 			buf_len = len;
@@ -548,10 +548,10 @@ int phytium_sm4_ecb(struct skcipher_request *req, int cryptomode)
 
 		dma_sync_single_for_device(scto.dev, ctx->dma_paddr, buf_len, DMA_BIDIRECTIONAL);
 
-		mutex_lock(&scto.sm4_lock);
+		mutex_lock(&scto.scto_lock);
 		sm4_init(SM4_MODE_ECB, cryptomode, ctx->scto_key, NULL);
 		sm4_dma(ctx->dma_paddr, ctx->dma_paddr, buf_len);
-		mutex_unlock(&scto.sm4_lock);
+		mutex_unlock(&scto.scto_lock);
 		dsb(sy);
 
 		if(likely(dst_align_flag)){
@@ -564,7 +564,7 @@ int phytium_sm4_ecb(struct skcipher_request *req, int cryptomode)
 		len -= buf_len;
 		offset += buf_len; 
 	}
-	atomic_dec(&scto.sm4_wait_count);
+	atomic_dec(&scto.wait_count);
 
 	return 0;
 }
@@ -592,7 +592,7 @@ int phytium_sm4_cbc(struct skcipher_request *req, int cryptomode)
 		return -1;
 	}
 
-	if(unlikely((len < 128) || ((len < 1024) && (atomic_read(&scto.sm4_wait_count) > 1)))){
+	if(unlikely((len < 128) || ((len < 1024) && (atomic_read(&scto.wait_count) > 1)))){
 		if(cryptomode == SM4_CRYPTO_ENCRYPT)
 			sm4_crypt(req, sm4_crypt_cbc_enc);
 		else
@@ -611,7 +611,7 @@ int phytium_sm4_cbc(struct skcipher_request *req, int cryptomode)
 	}
 
 	offset = 0;
-	atomic_inc(&scto.sm4_wait_count);
+	atomic_inc(&scto.wait_count);
 	while(len){	
 		if(len <= PHYTIUM_DMA_BUF_SIZE){
 			buf_len = len;
@@ -630,10 +630,10 @@ int phytium_sm4_cbc(struct skcipher_request *req, int cryptomode)
 			memcpy(ctx->iv, (void*)((long)(ctx->v_dma_buf) + buf_len - 16), 16);
 		dma_sync_single_for_device(scto.dev, ctx->dma_paddr, buf_len, DMA_BIDIRECTIONAL);
 
-		mutex_lock(&scto.sm4_lock);
+		mutex_lock(&scto.scto_lock);
 		sm4_init(SM4_MODE_CBC, cryptomode, ctx->scto_key, req->iv);
 		sm4_dma(ctx->dma_paddr, ctx->dma_paddr, buf_len);
-		mutex_unlock(&scto.sm4_lock);
+		mutex_unlock(&scto.scto_lock);
 		dsb(sy);
 
 		if(!cryptomode)
@@ -651,7 +651,7 @@ int phytium_sm4_cbc(struct skcipher_request *req, int cryptomode)
 		len -= buf_len;
 		offset += buf_len;
 	}
-	atomic_dec(&scto.sm4_wait_count);
+	atomic_dec(&scto.wait_count);
 
 	return 0;
 }
@@ -680,7 +680,7 @@ int phytium_sm4_ctr(struct skcipher_request *req)
 		return -1;
 	}
 
-	if(unlikely((len < 128) || ((len < 1024) && (atomic_read(&scto.sm4_wait_count) > 1)))){
+	if(unlikely((len < 128) || ((len < 1024) && (atomic_read(&scto.wait_count) > 1)))){
 		sm4_crypt(req, sm4_crypt_ctr);
 		return 0;
 	}
@@ -718,7 +718,7 @@ int phytium_sm4_ctr(struct skcipher_request *req)
 	left = len & 0xf;
 	len -= left;
 
-	atomic_inc(&scto.sm4_wait_count);
+	atomic_inc(&scto.wait_count);
 	while(len){	
 		if(likely(len <= PHYTIUM_DMA_BUF_SIZE)){
 			buf_len = len;
@@ -735,7 +735,7 @@ int phytium_sm4_ctr(struct skcipher_request *req)
 
 		dma_sync_single_for_device(scto.dev, ctx->dma_paddr, buf_len, DMA_BIDIRECTIONAL);
 
-		mutex_lock(&scto.sm4_lock);
+		mutex_lock(&scto.scto_lock);
 		sm4_init(SM4_MODE_CTR, SM4_CRYPTO_ENCRYPT, ctx->scto_key, req->iv);
 
 		ctr_len = buf_len >> 4;
@@ -766,7 +766,7 @@ int phytium_sm4_ctr(struct skcipher_request *req)
 		}else{
 			sm4_dma(ctx->dma_paddr, ctx->dma_paddr, buf_len);
 		}
-		mutex_unlock(&scto.sm4_lock);
+		mutex_unlock(&scto.scto_lock);
 		dsb(sy);
 
 		if(likely(dst_align_flag)){
@@ -779,7 +779,7 @@ int phytium_sm4_ctr(struct skcipher_request *req)
 		len -= buf_len;
 		offset += buf_len;
 	}
-	atomic_dec(&scto.sm4_wait_count);
+	atomic_dec(&scto.wait_count);
 
 	if(left){
 		memcpy(tempiv, req->iv, 16);
@@ -859,3 +859,4 @@ void sm4_phytium_dma_algs_unregister(void)
 	crypto_unregister_skciphers(sm4_phytium_dma_algs,
 			ARRAY_SIZE(sm4_phytium_dma_algs));
 }
+#endif

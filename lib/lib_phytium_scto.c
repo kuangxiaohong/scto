@@ -28,105 +28,115 @@
 /*PKE register base address*/
 #define PKE_BASE_ADDR				(0x5000)
 
-int scto_fd = -1;
-void *regs = NULL;
-uint64_t *common_info_start = NULL;
-phytium_scto_context *desc_start = NULL;
-volatile mepool_t *mepool = NULL;
-volatile int mepool_offset = 0;
-void *dma_buf[257] = {NULL};
-pthread_key_t pkey;
+
+int phytium_scto_fd = -1;
+static void *regs = NULL;
+uint64_t *phytium_common_info_start = NULL;
+phytium_scto_context *phytium_desc_start[(SCTO_DESC_NUM + 1) * sizeof(phytium_scto_context) / 0x400000 + 1] = {NULL};
+static volatile mepool_t *mepool[(SCTO_DESC_NUM + 1) * sizeof(mepool_t) / 0x400000 + 1] = {NULL};
+static void *dma_buf[SCTO_DESC_NUM + 1] = {NULL};
 
 void *mem_alloc(int *desc_id)
 {
 	int id = 0, alloc_offset;
-	int cpuid, *cpu;
-
-	cpu = pthread_getspecific(pkey);
-	if(unlikely(cpu == NULL)){
-		read(scto_fd, &cpuid, 4);
-		cpu = malloc(64);
-		if(cpu){
-			*cpu = cpuid;
-			pthread_setspecific(pkey, cpu);
-		}
-	}else{
-		cpuid = *cpu;
-	}
-
-CONTINUE:	
-	alloc_offset = __atomic_fetch_add(&mepool[1024 + cpuid].counter, 1, __ATOMIC_SEQ_CST) & 0x1F;
-
-	id = __atomic_exchange_n(&mepool[alloc_offset + cpuid * 32].counter, 0, __ATOMIC_SEQ_CST);
 	
-	if((id > 0) && (id <= 256)){
+	alloc_offset = __atomic_fetch_add(&mepool[(SCTO_DESC_NUM + 1) * sizeof(mepool_t) / 0x400000][(0x400000 / sizeof(mepool_t)) - 1].counter, 1, __ATOMIC_SEQ_CST) & (SCTO_DESC_NUM - 1);
+
+	id = __atomic_exchange_n(&mepool[alloc_offset / (0x400000 / sizeof(mepool_t))][alloc_offset & ((0x400000 / sizeof(mepool_t)) - 1)].counter, 0, __ATOMIC_SEQ_CST);
+	
+	if(id == alloc_offset + 1){
 		*desc_id = id;
 		return dma_buf[id];
 	}else{
-		goto CONTINUE;
+		if(unlikely(id))
+			printf("error!id:%d, offset:%d\n", id, alloc_offset);
+		return NULL;
 	}
 }
 
 void mem_free(int desc_id)
-{
-	if(unlikely((desc_id > 256) || (desc_id <= 0))){
+{	
+	if(unlikely((desc_id > SCTO_DESC_NUM) || (desc_id <= 0))){
 		printf("mem_free error! desc_id:0x%x\n", desc_id);
 		return;
 	}
 
-	mepool[desc_id - 1].counter = desc_id;
+	mepool[(desc_id - 1) / (0x400000 / sizeof(mepool_t))][(desc_id - 1) & ((0x400000 / sizeof(mepool_t)) - 1)].counter = desc_id;
 }
-
-
 
 int lib_scto_init(void)
 {
-	int i;
-	scto_fd = open("/dev/scto", O_RDWR|O_SYNC);
-	if(scto_fd < 0){
+	uint64_t i;
+	uint64_t pagesize = getpagesize();
+
+	phytium_scto_fd = open("/dev/scto", O_RDWR|O_SYNC);
+	if(phytium_scto_fd < 0){
 		printf("open scto fail!\n");
 		return -1;
 	}
 
-	regs = mmap(NULL, 0x10000, PROT_READ|PROT_WRITE, MAP_SHARED, scto_fd, 0);
+	regs = mmap(NULL, 0x10000, PROT_READ|PROT_WRITE, MAP_SHARED, phytium_scto_fd, 0);
 	if(regs == MAP_FAILED){
 		printf("mmap regs fail!\n");
 		return -1;
 	}
 
-	common_info_start = mmap(NULL, 0x40000, PROT_READ, MAP_SHARED, scto_fd, getpagesize());
-	if(common_info_start == MAP_FAILED){
+	phytium_common_info_start = mmap(NULL, SCTO_DESC_NUM * 8 + 1024, PROT_READ, MAP_SHARED, phytium_scto_fd, pagesize);
+	if(phytium_common_info_start == MAP_FAILED){
 		printf("mmap common_info_start fail!\n");
 		return -1;
 	}
 
-	desc_start = mmap(NULL, 0x40000, PROT_READ|PROT_WRITE, MAP_SHARED, scto_fd, 2 * getpagesize());
-	if(desc_start == MAP_FAILED){
-		printf("mmap desc_start fail!\n");
-		return -1;
-	}
-
-	mepool = mmap(NULL, 0x40000, PROT_READ|PROT_WRITE, MAP_SHARED, scto_fd, 3 * getpagesize());
-	if(mepool == MAP_FAILED){
-		printf("mmap mepool fail!\n");
-		return -1;
-	}
-
-	for(i = 1; i <= 256; i++){
-		dma_buf[i] = mmap(NULL, 0x40000, PROT_READ|PROT_WRITE, MAP_SHARED, scto_fd, common_info_start[i]);
-		if(dma_buf[i] == MAP_FAILED){
-			printf("mmap dma_buf[%d] fail!\n", i);
+	for(i = 0; i < (SCTO_DESC_NUM + 1) * sizeof(phytium_scto_context) / 0x400000 + 1; i++){
+		phytium_desc_start[i] = mmap(NULL, 0x400000, PROT_READ|PROT_WRITE, MAP_SHARED, phytium_scto_fd, ((0x2ul) | (i << 2)) * pagesize);
+		if(phytium_desc_start[i] == MAP_FAILED){
+			printf("mmap desc_start %lu fail!\n", i);
 			return -1;
 		}
 	}
 
-	if(pthread_key_create(&pkey, NULL)){
-		printf("pkey create fail!\n");
-		return -1;
+	for(i = 0; i < (SCTO_DESC_NUM + 1) * sizeof(mepool_t) / 0x400000 + 1; i++){
+		mepool[i] = mmap(NULL, 0x400000, PROT_READ|PROT_WRITE, MAP_SHARED, phytium_scto_fd, ((0x3ul) | (i << 2)) * pagesize);
+		if(mepool[i] == MAP_FAILED){
+			printf("mmap mepool %lu fail!\n", i);
+			return -1;
+		}
+	}
+
+	for(i = 1; i <= SCTO_DESC_NUM; i++){
+		dma_buf[i] = mmap(NULL, PER_DESC_DMA_BUF_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, phytium_scto_fd, phytium_common_info_start[i]);
+		if(dma_buf[i] == MAP_FAILED){
+			printf("mmap dma_buf[%lu] fail!\n", i);
+			return -1;
+		}
 	}
 
 	return 0;
 }
 
-
+int get_rand_data(unsigned char *buf, int len)
+{
+	int ret_bytes = 0,loop = 0, offset = 0,retry_cnt = 0;
+	if (buf)
+	{
+		while (offset < len)
+		{
+retry:
+			//printf("offset is:%d\n",offset);
+			ret_bytes = read(phytium_scto_fd, buf + offset, len - offset);
+			if (ret_bytes > 0)
+				offset += ret_bytes;
+			else if (ret_bytes == 0)
+			{
+				retry_cnt++;
+				if (retry_cnt >= 10000)
+					return offset;
+				goto retry;
+			}
+			else
+				return offset;
+		}
+	}
+	return offset;
+}
 

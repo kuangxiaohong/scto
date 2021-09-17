@@ -9,6 +9,7 @@
  * (at your option) any later version.
  *
  */
+
 #include <asm/memory.h>
 #include <linux/delay.h>
 #include <crypto/internal/hash.h>
@@ -20,8 +21,8 @@
 #include "sm3_phytium.h"
 #include "phytium_scto.h"
 
-#define HMAC_IPAD_VALUE 0x36
-#define HMAC_OPAD_VALUE 0x5c
+#if SCTO_KERNEL_MODE
+
 
 static void sm3_init(struct sm3_context *ctx)
 {
@@ -228,8 +229,6 @@ static inline void sm3_set_data(u32 *data)
 
 static inline void sm3_dma(long in, long out, u32 byteLen)
 {
-	mutex_lock(&scto.dma_lock);
-
 	//src addr
 	scto.dma_reg->saddr0 = (in >> 2) & 0xFFFFFFFF;
 	scto.dma_reg->saddr1 = (in >> 34) & 0x0FFF;
@@ -254,8 +253,6 @@ static inline void sm3_dma(long in, long out, u32 byteLen)
 	do{
 		dsb(sy);
 	}while(!(scto.smx_reg->sr_2 & 2));
-
-	mutex_unlock(&scto.dma_lock);
 }
 
 static inline void sm3_reverse_word(u32 *in, u32 *out)
@@ -294,7 +291,7 @@ static int phytium_sm3_dma_update(struct shash_desc *desc, const u8 *data, unsig
 		return 0;
 	}
 
-	if(unlikely((len < 128) || ((len < 1024) && (atomic_read(&scto.sm3_wait_count) > 1)))){
+	if(unlikely((len < 128) || ((len < 1024) && (atomic_read(&scto.wait_count) > 1)))){
 		sm3_update(&ctx->sm3_ctx, data, len);
 		return 0;
 	}
@@ -334,7 +331,7 @@ static int phytium_sm3_dma_update(struct shash_desc *desc, const u8 *data, unsig
 
 	calclen = count << 6;
 
-	atomic_inc(&scto.sm3_wait_count);
+	atomic_inc(&scto.wait_count);
 	while(calclen || left){	
 		if(likely(calclen <= (PHYTIUM_DMA_BUF_SIZE - left))){
 			buf_len = calclen + left;
@@ -346,17 +343,17 @@ static int phytium_sm3_dma_update(struct shash_desc *desc, const u8 *data, unsig
 
 		smx_dma_reverse_word(src, ctx->v_dma_buf + (left >> 2), (buf_len - left) >> 2);
 		dma_sync_single_for_device(scto.dev, ctx->dma_paddr, buf_len, DMA_BIDIRECTIONAL);
-		mutex_lock(&scto.sm3_lock);
+		mutex_lock(&scto.scto_lock);
 		sm3_set_data(ctx->sm3_ctx.state);
 		sm3_dma(ctx->dma_paddr, ctx->dma_paddr, buf_len);
-		mutex_unlock(&scto.sm3_lock);
+		mutex_unlock(&scto.scto_lock);
 		dsb(sy);
 		sm3_reverse_word(ctx->v_dma_buf, ctx->sm3_ctx.state);
 		offset += (buf_len - left);
 		calclen -= (buf_len - left);
 		left = 0;
 	}
-	atomic_dec(&scto.sm3_wait_count);
+	atomic_dec(&scto.wait_count);
 
 	//process the remainder
 	data += count << 6;
@@ -431,6 +428,8 @@ static struct shash_alg sm3_dma_phytium_alg = {
 	}
 };
 
+#define HMAC_IPAD_VALUE 0x36
+#define HMAC_OPAD_VALUE 0x5c
 
 static int phytium_hmac_sm3_dma_setkey(struct crypto_shash *tfm, const u8 *key, unsigned int keylen)
 {
@@ -529,3 +528,5 @@ void sm3_phytium_dma_algs_unregister(void)
 	crypto_unregister_shash(&sm3_dma_phytium_alg);
 	crypto_unregister_shash(&hmac_sm3_dma_phytium_alg);
 }
+
+#endif

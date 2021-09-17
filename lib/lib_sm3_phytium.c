@@ -29,13 +29,12 @@ int phytium_sm3_dma_init(int *desc_id)
 	if(*desc_id <= 0){
 		dma_buf = mem_alloc(desc_id);
 		if(dma_buf == NULL){
-			printf("desc_id alloc fail!\n");
 			return -1;
 		}
 	}
 
-	desc_start[*desc_id].alg = ALG_SM3;
-	ctx = &desc_start[*desc_id].psm3_ctx;
+	phytium_desc_start[*desc_id / (0x400000 / sizeof(phytium_scto_context))][*desc_id & ((0x400000 / sizeof(phytium_scto_context)) - 1)].alg = ALG_SM3;
+	ctx = &phytium_desc_start[*desc_id / (0x400000 / sizeof(phytium_scto_context))][*desc_id & ((0x400000 / sizeof(phytium_scto_context)) - 1)].psm3_ctx;
 
 	ctx->evp_md_ctx.digest = EVP_sm3();
 	ctx->evp_md_ctx.md_data = &ctx->sm3_ctx;
@@ -44,7 +43,7 @@ int phytium_sm3_dma_init(int *desc_id)
 
 	if(dma_buf)
 		ctx->v_dma_buf = dma_buf;
-	ctx->user_count = (volatile int*)((long)common_info_start + 0x10000);
+	ctx->user_count = (volatile int*)((long)phytium_common_info_start + SCTO_DESC_NUM * 8 + 128);
 
 	return 0;
 }
@@ -62,7 +61,7 @@ int phytium_sm3_dma_update(int desc_id, const uint8_t *data, unsigned int len)
 		return 0;
 	}
 
-	ctx = &desc_start[desc_id].psm3_ctx;
+	ctx = &phytium_desc_start[desc_id / (0x400000 / sizeof(phytium_scto_context))][desc_id & ((0x400000 / sizeof(phytium_scto_context)) - 1)].psm3_ctx;
 
 	if((len < 448) || __atomic_load_n(ctx->user_count, __ATOMIC_SEQ_CST)){
 		ctx->evp_md_ctx.digest->update(&ctx->evp_md_ctx, data, len);
@@ -102,17 +101,17 @@ int phytium_sm3_dma_update(int desc_id, const uint8_t *data, unsigned int len)
 	calclen = count << 6;
 
 	while(calclen || left){	
-		if(likely(calclen <= (PHYTIUM_DMA_BUF_SIZE - left))){
+		if(likely(calclen <= (PER_DESC_DMA_BUF_SIZE - left))){
 			buf_len = calclen + left;
 		}else{
-			buf_len = PHYTIUM_DMA_BUF_SIZE;
+			buf_len = PER_DESC_DMA_BUF_SIZE;
 		}
 
 		src = (uint32_t*)((long)data + offset);
 
 		smx_dma_reverse_word(src, (uint8_t*)(ctx->v_dma_buf) + left, (buf_len - left) >> 2);
 
-		ioctl(scto_fd, SCTO_SM3, ((long)desc_id << 32) | buf_len);
+		ioctl(phytium_scto_fd, SCTO_SM3, ((long)desc_id << 32) | buf_len);
 		
 		sm3_reverse_word(ctx->v_dma_buf, &ctx->sm3_ctx);
 		offset += (buf_len - left);
@@ -137,7 +136,7 @@ int phytium_sm3_dma_final(int desc_id, uint8_t *out)
 {
 	phytium_sm3_context *ctx;
 
-	ctx = &desc_start[desc_id].psm3_ctx;
+	ctx = &phytium_desc_start[desc_id / (0x400000 / sizeof(phytium_scto_context))][desc_id & ((0x400000 / sizeof(phytium_scto_context)) - 1)].psm3_ctx;
 
 	ctx->evp_md_ctx.digest->final(&ctx->evp_md_ctx, out);
 

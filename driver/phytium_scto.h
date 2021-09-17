@@ -47,19 +47,33 @@ typedef struct {
     u32 version;
 } smx_reg_t;
 
+typedef struct {
+	u32 cr;
+	u32 rtcr;
+	u32 sr;
+	u32 dr;
+	u32 rev1[4];
+	u32 fifo_cr;
+	u32 fifo_sr;	
+	u32 rev2[18];
+	u32 ht_sr;
+	u32 rev3[3];
+	u32 ro_cr;
+	u32 ro_cr2;
+	u32 ro_cr3;
+}trng_reg_t;
+
+
 struct scto_dev {
 	void __iomem *regs;
 	volatile hash_reg_t *hash_reg;
 	volatile ske_reg_t *ske_reg;
 	volatile dma_reg_t *dma_reg;
 	volatile smx_reg_t *smx_reg;
+	volatile trng_reg_t *trng_reg;
 	struct device *dev;
-	atomic_t     sm3_wait_count;
-	atomic_t     sm4_wait_count;
-	struct mutex dma_lock;
-	struct mutex sm3_lock;
-	struct mutex sm4_lock;
-	struct mutex sm2_lock;
+	atomic_t     wait_count;
+	struct mutex rng_lock;
 	struct mutex scto_lock;
 };
 
@@ -166,7 +180,7 @@ typedef struct{
 	volatile int *user_count;
 	u32 *v_dma_buf;
 	EVP_CIPHER_CTX evp_cipher_ctx;
-	char data[0];
+	char data[128];
 }lib_phytium_sm4_context;
 
 typedef struct{

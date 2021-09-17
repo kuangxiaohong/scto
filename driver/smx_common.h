@@ -2,6 +2,19 @@
 #ifndef _SMX_H_
 #define _SMX_H_
 
+
+//0-use ACPI table; 1-register platform device PHYTSCTO
+#define SCTO_REGISTER_SELF	(1)
+//0-user space mode; 1-kernel space mode
+#define SCTO_KERNEL_MODE	(0)
+//256, 512, 1024, 2048, 4096, 8192, 16384, 32768
+#define SCTO_DESC_NUM	(16384)
+//4096, 8192, 16384, 32768, 65536
+#define PER_DESC_DMA_BUF_SIZE	(65536)
+
+
+
+
 /*SMX register base address*/
 #define SMX_BASE_ADDR				(0x28220000UL)
 /*SMX DMA register base address*/
@@ -60,3 +73,4 @@ static inline void smx_dma_reverse_word(const void *in, void *out, u32 wordlen)
 	}
 }
 #endif
+

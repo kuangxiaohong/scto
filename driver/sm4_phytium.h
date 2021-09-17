@@ -2,6 +2,7 @@
 #ifndef _SM4_PHYTIUM_H_
 #define _SM4_PHYTIUM_H_
 
+
 /*some register offset*/
 #define SKE_MODE_OFFSET           (9)
 #define SKE_CRYPTO_OFFSET         (8)

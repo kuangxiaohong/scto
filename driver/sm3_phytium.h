@@ -2,6 +2,7 @@
 #ifndef __SM3_PHYTIUM_H__
 #define __SM3_PHYTIUM_H__
 
+
 /*SM3 digest and block length*/
 #define SM3_DIGEST_WORD_LEN   (8)
 #define SM3_DIGEST_BYTE_LEN   (SM3_DIGEST_WORD_LEN << 2)
