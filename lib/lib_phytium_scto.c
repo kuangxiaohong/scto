@@ -38,8 +38,9 @@ static void *dma_buf[SCTO_DESC_NUM + 1] = {NULL};
 
 void *mem_alloc(int *desc_id)
 {
-	int id = 0, alloc_offset;
-	
+	int id = 0, alloc_offset, retry_count = 0;
+
+RETRY:	
 	alloc_offset = __atomic_fetch_add(&mepool[(SCTO_DESC_NUM + 1) * sizeof(mepool_t) / 0x400000][(0x400000 / sizeof(mepool_t)) - 1].counter, 1, __ATOMIC_SEQ_CST) & (SCTO_DESC_NUM - 1);
 
 	id = __atomic_exchange_n(&mepool[alloc_offset / (0x400000 / sizeof(mepool_t))][alloc_offset & ((0x400000 / sizeof(mepool_t)) - 1)].counter, 0, __ATOMIC_SEQ_CST);
@@ -50,6 +51,8 @@ void *mem_alloc(int *desc_id)
 	}else{
 		if(unlikely(id))
 			printf("error!id:%d, offset:%d\n", id, alloc_offset);
+		if(retry_count ++ < SCTO_DESC_NUM)
+			goto RETRY;
 		return NULL;
 	}
 }
