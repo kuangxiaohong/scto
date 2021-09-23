@@ -82,7 +82,7 @@ static inline void lib_sm3_dma(long in, long out, uint32_t byteLen)
 		if(unlikely(count++ > 1024))
 			schedule();
 		if(unlikely(count > 65536)){
-			printk("sm3 timeout!");
+			printk("sm3 timeout!\n");
 			break;
 		}
 	}while(!(scto.smx_reg->sr_2 & 2));
@@ -156,7 +156,7 @@ static void lib_sm4_dma(long in, long out, uint32_t byteLen)
 		if(unlikely(count++ > 1024))
 			schedule();
 		if(unlikely(count > 65536)){
-			printk("sm4 timeout!");
+			printk("sm4 timeout!\n");
 			break;
 		}
 	}while(!(scto.smx_reg->sr_2 & 1));
@@ -184,7 +184,7 @@ static u32 trng_wait_till_ready(void)
 
 			dsb(sy);
 
-			printk("trng timeout!");
+			printk("trng timeout!\n");
 			break;
 		}
 	}

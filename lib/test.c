@@ -282,6 +282,7 @@ int sm4_cbc_test(int testsize, int cpuid)
 			phytium_sm4_update(sm4_desc_id, output, testsize, cmpbuf);
 			if(sm4_desc_id > 0)
 				mem_free(sm4_desc_id);
+			multestnum[cpuid][0]++;
 		}
 		gettimeofday( &end, NULL );
 		
@@ -391,6 +392,7 @@ int sm4_ecb_test(int testsize, int cpuid)
 			phytium_sm4_update(sm4_desc_id, output, testsize, cmpbuf);
 			if(sm4_desc_id > 0)
 				mem_free(sm4_desc_id);
+			multestnum[cpuid][0]++;
 		}
 		gettimeofday( &end, NULL );
 		
@@ -505,6 +507,7 @@ int sm4_ctr_test(int testsize, int cpuid)
 			phytium_sm4_update(sm4_desc_id, output, testsize, cmpbuf);
 			if(sm4_desc_id > 0)
 				mem_free(sm4_desc_id);
+			multestnum[cpuid][0]++;
 		}
 		gettimeofday( &end, NULL );
 		

@@ -101,10 +101,10 @@ int phytium_sm3_dma_update(int desc_id, const uint8_t *data, unsigned int len)
 	calclen = count << 6;
 
 	while(calclen || left){	
-		if(likely(calclen <= (PER_DESC_DMA_BUF_SIZE - left))){
+		if(likely(calclen <= (PHYTIUM_SM3_DMA_SIZE - left))){
 			buf_len = calclen + left;
 		}else{
-			buf_len = PER_DESC_DMA_BUF_SIZE;
+			buf_len = PHYTIUM_SM3_DMA_SIZE;
 		}
 
 		src = (uint32_t*)((long)data + offset);

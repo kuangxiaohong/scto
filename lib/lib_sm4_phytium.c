@@ -31,10 +31,15 @@ static int phytium_sm4_ecb(int desc_id, uint8_t*in, uint32_t len, uint8_t*out)
 
 	offset = 0;
 	while(len){	
-		if(likely(len <= PER_DESC_DMA_BUF_SIZE)){
+		if(likely(len <= PHYTIUM_SM4_DMA_SIZE)){
 			buf_len = len;
 		}else{
-			buf_len = PER_DESC_DMA_BUF_SIZE;
+			buf_len = PHYTIUM_SM4_DMA_SIZE;
+		}
+
+		if(buf_len < 256){
+			ctx->evp_cipher_ctx.cipher->do_cipher(&ctx->evp_cipher_ctx, out + offset, in + offset, buf_len);
+			break;
 		}
 
 		smx_dma_reverse_word(in + offset, ctx->v_dma_buf, buf_len >> 2);
@@ -66,10 +71,15 @@ static int phytium_sm4_cbc(int desc_id, uint8_t*in, uint32_t len, uint8_t*out)
 
 	offset = 0;
 	while(len){	
-		if(len <= PER_DESC_DMA_BUF_SIZE){
+		if(len <= PHYTIUM_SM4_DMA_SIZE){
 			buf_len = len;
 		}else{
-			buf_len = PER_DESC_DMA_BUF_SIZE;
+			buf_len = PHYTIUM_SM4_DMA_SIZE;
+		}
+
+		if(buf_len < 256){
+			ctx->evp_cipher_ctx.cipher->do_cipher(&ctx->evp_cipher_ctx, out + offset, in + offset, buf_len);
+			break;
 		}
 
 		smx_dma_reverse_word(in + offset, ctx->v_dma_buf, buf_len >> 2);
@@ -116,10 +126,16 @@ static int phytium_sm4_ctr(int desc_id, uint8_t*in, uint32_t len, uint8_t*out)
 	len -= num;
 
 	while(len){	
-		if(likely(len <= PER_DESC_DMA_BUF_SIZE)){
+		if(likely(len <= PHYTIUM_SM4_DMA_SIZE)){
 			buf_len = len;
 		}else{
-			buf_len = PER_DESC_DMA_BUF_SIZE;
+			buf_len = PHYTIUM_SM4_DMA_SIZE;
+		}
+
+		if(buf_len < 256){
+			ctx->evp_cipher_ctx.cipher->do_cipher(&ctx->evp_cipher_ctx, out + offset, in + offset, buf_len);
+			offset += buf_len;
+			break;
 		}
 
 		smx_dma_reverse_word(in + offset, ctx->v_dma_buf, buf_len >> 2);
