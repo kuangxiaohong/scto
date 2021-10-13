@@ -381,6 +381,7 @@ int phytium_sm4_setkey(struct crypto_skcipher *tfm, const u8 *key, unsigned int 
 	ctx->v_dma_buf = (u32*)(((long)(ctx->dma_buf + 64) >> 6) << 6);
 	ctx->dma_paddr = virt_to_phys(ctx->v_dma_buf);
 	ctx->total_len = 0;
+	mutex_init(&ctx->ctx_lock);
 
 	return 0;
 }
@@ -448,6 +449,7 @@ int sm4_crypt(struct skcipher_request *req, void (*fn)(phytium_sm4_context *, si
 	dst_nents = sg_nents(dst);
 	src_align_flag = phytium_dma_sg_len_align_detect(src, src_nents);
 
+	mutex_lock(&ctx->ctx_lock);
 	left = ctx->total_len & 0xf;
 	fill = 16 - left;
 	ctx->total_len += len;
@@ -463,6 +465,7 @@ int sm4_crypt(struct skcipher_request *req, void (*fn)(phytium_sm4_context *, si
 			sg_copy_buffer(src, src_nents, temp + left, len, offset, true);
 			fn(ctx, 16, tempiv, temp, temp);
 			sg_copy_buffer(dst, dst_nents, temp + left, len, offset, false);
+			mutex_unlock(&ctx->ctx_lock);
 			return 0;
 		}
 	}
@@ -496,6 +499,7 @@ int sm4_crypt(struct skcipher_request *req, void (*fn)(phytium_sm4_context *, si
 		fn(ctx, 16, tempiv, temp, temp);
 		sg_copy_buffer(dst, dst_nents, temp, left, offset, false);
 	}
+	mutex_unlock(&ctx->ctx_lock);
 
 	return 0;
 }
@@ -512,6 +516,10 @@ int phytium_sm4_ecb(struct skcipher_request *req, int cryptomode)
 		return -1;
 	}
 
+	if(unlikely(ctx->v_dma_buf == NULL)){
+		return -1;
+	}
+
 	if(unlikely((len < 128) || ((len < 1024) && (atomic_read(&scto.wait_count) > 1)))){
 		if(cryptomode == SM4_CRYPTO_ENCRYPT)
 			sm4_crypt(req, sm4_crypt_ecb_enc);
@@ -525,13 +533,9 @@ int phytium_sm4_ecb(struct skcipher_request *req, int cryptomode)
 	src_align_flag = phytium_dma_sg_len_align_detect(req->src, src_nents);
 	dst_align_flag = phytium_dma_sg_len_align_detect(req->dst, dst_nents);
 
-	if(unlikely(ctx->v_dma_buf == NULL)){
-		ctx->v_dma_buf = (u32*)(((long)(ctx->dma_buf + 64) >> 6) << 6);
-		ctx->dma_paddr = virt_to_phys(ctx->v_dma_buf);
-	}
-
 	offset = 0;
 	atomic_inc(&scto.wait_count);
+	mutex_lock(&ctx->ctx_lock);
 	while(len){	
 		if(likely(len <= PHYTIUM_DMA_BUF_SIZE)){
 			buf_len = len;
@@ -565,6 +569,7 @@ int phytium_sm4_ecb(struct skcipher_request *req, int cryptomode)
 		offset += buf_len; 
 	}
 	atomic_dec(&scto.wait_count);
+	mutex_unlock(&ctx->ctx_lock);
 
 	return 0;
 }
@@ -591,6 +596,10 @@ int phytium_sm4_cbc(struct skcipher_request *req, int cryptomode)
 	if(unlikely((len == 0) || (len & 0xf))){
 		return -1;
 	}
+	
+	if(unlikely(ctx->v_dma_buf == NULL)){
+		return -1;
+	}
 
 	if(unlikely((len < 128) || ((len < 1024) && (atomic_read(&scto.wait_count) > 1)))){
 		if(cryptomode == SM4_CRYPTO_ENCRYPT)
@@ -605,13 +614,9 @@ int phytium_sm4_cbc(struct skcipher_request *req, int cryptomode)
 	src_align_flag = phytium_dma_sg_len_align_detect(req->src, src_nents);
 	dst_align_flag = phytium_dma_sg_len_align_detect(req->dst, dst_nents);
 
-	if(unlikely(ctx->v_dma_buf == NULL)){
-		ctx->v_dma_buf = (u32*)(((long)(ctx->dma_buf + 64) >> 6) << 6);
-		ctx->dma_paddr = virt_to_phys(ctx->v_dma_buf);
-	}
-
 	offset = 0;
 	atomic_inc(&scto.wait_count);
+	mutex_lock(&ctx->ctx_lock);
 	while(len){	
 		if(len <= PHYTIUM_DMA_BUF_SIZE){
 			buf_len = len;
@@ -652,6 +657,7 @@ int phytium_sm4_cbc(struct skcipher_request *req, int cryptomode)
 		offset += buf_len;
 	}
 	atomic_dec(&scto.wait_count);
+	mutex_unlock(&ctx->ctx_lock);
 
 	return 0;
 }
@@ -680,6 +686,10 @@ int phytium_sm4_ctr(struct skcipher_request *req)
 		return -1;
 	}
 
+	if(unlikely(ctx->v_dma_buf == NULL)){
+		return -1;
+	}
+
 	if(unlikely((len < 128) || ((len < 1024) && (atomic_read(&scto.wait_count) > 1)))){
 		sm4_crypt(req, sm4_crypt_ctr);
 		return 0;
@@ -690,12 +700,7 @@ int phytium_sm4_ctr(struct skcipher_request *req)
 	src_align_flag = phytium_dma_sg_len_align_detect(req->src, src_nents);
 	dst_align_flag = phytium_dma_sg_len_align_detect(req->dst, dst_nents);
 
-	if(unlikely(ctx->v_dma_buf == NULL)){
-		ctx->v_dma_buf = (u32*)(((long)(ctx->dma_buf + 64) >> 6) << 6);
-		ctx->dma_paddr = virt_to_phys(ctx->v_dma_buf);
-	}
-
-	
+	mutex_lock(&ctx->ctx_lock);
 	left = ctx->total_len & 0xf;
 	fill = 16 - left;
 	ctx->total_len += len;
@@ -711,6 +716,7 @@ int phytium_sm4_ctr(struct skcipher_request *req)
 			sg_copy_buffer(req->src, src_nents, temp + left, len, offset, true);
 			sm4_crypt_ctr(ctx, 16, tempiv, temp, temp);
 			sg_copy_buffer(req->dst, dst_nents, temp + left, len, offset, false);
+			mutex_unlock(&ctx->ctx_lock);
 			return 0;
 		}
 	}
@@ -787,6 +793,7 @@ int phytium_sm4_ctr(struct skcipher_request *req)
 		sm4_crypt_ctr(ctx, 16, tempiv, temp, temp);
 		sg_copy_buffer(req->dst, dst_nents, temp, left, offset, false);
 	}
+	mutex_unlock(&ctx->ctx_lock);
 
 	return 0;
 }

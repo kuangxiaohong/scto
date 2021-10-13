@@ -32,6 +32,7 @@ typedef struct{
 	u32 iv[4];
 	u32 scto_key[4];
 	u64 total_len;
+	struct mutex ctx_lock;
 	u32 *v_dma_buf;
 	long dma_paddr;
 	u8 dma_buf[PHYTIUM_DMA_BUF_SIZE + 256];
