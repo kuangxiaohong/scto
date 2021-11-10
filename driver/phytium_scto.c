@@ -320,8 +320,11 @@ static const struct file_operations scto_fops = {
 	.open		= scto_open,
 	.release	= scto_release,
 	.read		= scto_read,
+#if SCTO_KERNEL_MODE
+#else
 	.mmap		= scto_mmap,
 	.unlocked_ioctl		= scto_ioctl,
+#endif
 };
 
 #if SCTO_KERNEL_MODE
@@ -348,7 +351,7 @@ static int phytium_algs_register(struct scto_dev *scto)
 
 	return 0;
 }
-#else
+#endif
 static struct cdev scto_pcdev;
 static struct class *scto_pclass;
 static dev_t scto_dev = 0;
@@ -400,7 +403,6 @@ static void scto_cdev_unregister(void)
     unregister_chrdev_region(scto_dev, 1);
 }
 
-#endif
 
 static int scto_probe(struct platform_device *pdev)
 {
@@ -482,13 +484,12 @@ static int scto_probe(struct platform_device *pdev)
 		printk(KERN_ERR"phytium_algs_register fail!\n");
 		goto err;
 	}
-#else
+#endif
 	err = scto_cdev_register();
 	if(err){
 		printk(KERN_ERR"scto_cdev_register fail!\n");
 		goto err;
 	}
-#endif
 
 	for(i = 0; i < SCTO_DESC_NUM; i++){
 		common_info_vaddr[i + 1] = virt_to_phys(vaddr[i]);
@@ -530,9 +531,9 @@ static int scto_remove(struct platform_device *pdev)
 
 #if SCTO_KERNEL_MODE
 		phytium_algs_unregister();
-#else
-		scto_cdev_unregister();
 #endif
+		scto_cdev_unregister();
+
 	if(common_info_vaddr)
 		free_pages((unsigned long)common_info_vaddr, get_order(SCTO_DESC_NUM * 8 + 1024));
 

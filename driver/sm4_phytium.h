@@ -35,7 +35,7 @@ typedef struct{
 	struct mutex ctx_lock;
 	u32 *v_dma_buf;
 	long dma_paddr;
-	u8 dma_buf[PHYTIUM_DMA_BUF_SIZE + 256];
+	u8 dma_buf[PHYTIUM_SM4_DMA_BUF_SIZE + 256];
 }phytium_sm4_context;
 
 #define SM4_BLOCK_BYTE_LEN  (16)

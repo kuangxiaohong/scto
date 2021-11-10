@@ -14,6 +14,10 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <signal.h>
+#include <sys/socket.h>
+#include <linux/if_alg.h>
+
+
 #include "openssl/bio.h"
 #include "openssl/err.h"
 #include "openssl/engine.h"
@@ -44,6 +48,7 @@ int test_sm3_hmac = 0;
 int test_sm4_cbc = 0;
 int test_sm4_ecb = 0;
 int test_sm4_ctr = 0;
+int test_kernel_sm4_cbc = 0;
 
 int test_time = 0;
 int thread_num = 1;
@@ -542,6 +547,175 @@ int sm4_ctr_test(int testsize, int cpuid)
 	return 0;
 }
 
+int kernel_sm4_cbc_test(int testsize, int cpuid, int op_fd)
+{
+	struct timeval start, end;
+	unsigned long time;
+	uint8_t input[BUF_SIZE] = {0}, output[BUF_SIZE] = {0}, cmpbuf[BUF_SIZE] = {0};
+	uint8_t std_key[16] = {
+		0xE0, 0x70, 0x99, 0xF1, 0xBF, 0xAF, 0xFD, 0x7F, 0x24, 0x0C, 0xD7, 0x90, 0xCA, 0x4F, 0xE1, 0x34
+	};			
+	uint8_t std_iv[16] = {
+		0xC7, 0x2B, 0x65, 0x91, 0xA0, 0xD7, 0xDE, 0x8F, 0x6B, 0x40, 0x72, 0x33, 0xAD, 0x35, 0x81, 0xD6
+	};
+	int i, tmp;
+	EVP_CIPHER_CTX *ectx;
+	int size, offset;
+	memcpy(input, randomdata[cpuid], testsize);
+
+	struct af_alg_iv *alg_iv;
+	struct cmsghdr *header;
+	uint32_t *type;
+	struct iovec iov;
+	int iv_msg_size = CMSG_SPACE(sizeof(*alg_iv) + 16);
+	char buffer[CMSG_SPACE(sizeof(*type)) + iv_msg_size];
+	struct msghdr msg;
+
+
+	size = testsize;
+	offset = 0;
+	i = 0;
+	while(size){
+		get_random_data(&i, 2);
+		i &= 0xFFF0;
+		if(i > size)
+			i = size;
+
+		memset(buffer, 0, sizeof(buffer));
+
+		iov.iov_base = input + offset,
+		iov.iov_len = i,
+
+		msg.msg_control = buffer,
+		msg.msg_controllen = sizeof(buffer),
+		msg.msg_iov = &iov,
+		msg.msg_iovlen = 1,
+
+		/* Set encrypt/decrypt operation */
+		header = CMSG_FIRSTHDR(&msg);
+		if (!header)
+			return -EINVAL;
+
+		header->cmsg_level = SOL_ALG;
+		header->cmsg_type = ALG_SET_OP;
+		header->cmsg_len = CMSG_LEN(sizeof(*type));
+		type = (void*)CMSG_DATA(header);
+		*type = ALG_OP_ENCRYPT;
+
+		/* Set IV */
+		header = CMSG_NXTHDR(&msg, header);
+		if (!header)
+			return -EINVAL;
+
+		header->cmsg_level = SOL_ALG;
+		header->cmsg_type = ALG_SET_IV;
+		header->cmsg_len = iv_msg_size;
+		alg_iv = (void*)CMSG_DATA(header);
+		alg_iv->ivlen = 16;
+		if(offset == 0){
+			memcpy(alg_iv->iv, std_iv, 16);
+		}else{
+			memcpy(alg_iv->iv, output + offset - 16, 16);
+		}
+
+
+		tmp = sendmsg(op_fd, &msg, 0);
+		if(tmp != i)
+			return -1;
+		else{
+			tmp = read(op_fd, output + offset, i);
+			if(tmp != i)
+				return -1;
+		}
+
+		size -= i;
+		offset += i;
+	}
+
+		
+	ectx = EVP_CIPHER_CTX_new();
+	if(ectx == NULL){
+		printf("EVP_CIPHER_CTX_new fail!\n");
+		return -1;
+	}
+	EVP_CipherInit_ex(ectx, EVP_sm4_cbc(), NULL, std_key, std_iv, 1);
+	EVP_CipherUpdate(ectx, cmpbuf, &i, input, testsize);
+	EVP_CipherFinal(ectx, cmpbuf + testsize, &i);
+	EVP_CIPHER_CTX_free(ectx);
+
+	if(memcmp(output, cmpbuf, testsize)){
+		printf("sm4 kernel cbc encrypt error!\n");
+		return -1;
+	}
+
+	size = testsize;
+	offset = 0;
+	i = 0;
+	while(size){
+		get_random_data(&i, 2);
+		i &= 0xFFF0;
+		if(i > size)
+			i = size;
+
+		memset(buffer, 0, sizeof(buffer));
+
+		iov.iov_base = output + offset,
+		iov.iov_len = i,
+
+		msg.msg_control = buffer,
+		msg.msg_controllen = sizeof(buffer),
+		msg.msg_iov = &iov,
+		msg.msg_iovlen = 1,
+
+		/* Set encrypt/decrypt operation */
+		header = CMSG_FIRSTHDR(&msg);
+		if (!header)
+			return -EINVAL;
+
+		header->cmsg_level = SOL_ALG;
+		header->cmsg_type = ALG_SET_OP;
+		header->cmsg_len = CMSG_LEN(sizeof(*type));
+		type = (void*)CMSG_DATA(header);
+		*type = ALG_OP_DECRYPT;
+
+		/* Set IV */
+		header = CMSG_NXTHDR(&msg, header);
+		if (!header)
+			return -EINVAL;
+
+		header->cmsg_level = SOL_ALG;
+		header->cmsg_type = ALG_SET_IV;
+		header->cmsg_len = iv_msg_size;
+		alg_iv = (void*)CMSG_DATA(header);
+		alg_iv->ivlen = 16;
+		if(offset == 0){
+			memcpy(alg_iv->iv, std_iv, 16);
+		}else{
+			memcpy(alg_iv->iv, output + offset - 16, 16);
+		}
+
+
+		tmp = sendmsg(op_fd, &msg, 0);
+		if(tmp != i)
+			return -1;
+		else{
+			tmp = read(op_fd, cmpbuf + offset, i);
+			if(tmp != i)
+				return -1;
+		}
+
+		size -= i;
+		offset += i;
+	}
+	
+	if(memcmp(input, cmpbuf, testsize)){
+		printf("sm4 kernel cbc decrypt error!\n");
+		return -1;
+	}
+
+	return 0;
+}
+
 #endif
 
 long count[8] = {0};
@@ -551,8 +725,36 @@ void * test(void*arg)
 	long i = (long)arg;
 	cpu_bind(tid[i], (i + 1) & 7);
 	int size = start_size;
+	struct sockaddr_alg sa = {
+		.salg_family = AF_ALG,
+		.salg_type = "skcipher",
+		.salg_name = "cbc(sm4)",
+	};
+	int tfm_fd = -1, op_fd;
+	uint8_t std_key[16] = {
+		0xE0, 0x70, 0x99, 0xF1, 0xBF, 0xAF, 0xFD, 0x7F, 0x24, 0x0C, 0xD7, 0x90, 0xCA, 0x4F, 0xE1, 0x34
+	};
 
 	get_random_data(randomdata[i], test_size);
+
+	if(test_kernel_sm4_cbc){
+		tfm_fd = socket(AF_ALG, SOCK_SEQPACKET, 0);
+		if(tfm_fd < 0) {
+			return NULL;
+		}
+		if(bind(tfm_fd, (struct sockaddr *)&sa, sizeof(sa)) < 0){
+			return NULL;
+		}
+
+		if(setsockopt(tfm_fd, SOL_ALG, ALG_SET_KEY, std_key, 16) < 0){
+			return NULL;
+		}
+		
+		op_fd = accept(tfm_fd, NULL, 0);
+		if(op_fd < 0){
+			return NULL;
+		}
+	}
 
 	while(running){
 		if(multestsize)
@@ -566,6 +768,10 @@ void * test(void*arg)
 			break;
 		if(test_sm4_ctr && sm4_ctr_test(size, i))
 			break;
+		if(test_kernel_sm4_cbc){
+			if(kernel_sm4_cbc_test((size + 0xF) & 0xFFFFFFF0, i, op_fd))
+				break;
+		}
 #endif
 		size ++;
 		if(size > test_size){
@@ -573,6 +779,11 @@ void * test(void*arg)
 			size = start_size;
 		}
 		count[i]++;	
+	}
+
+	if(test_kernel_sm4_cbc){
+		close(tfm_fd);
+		close(op_fd);
 	}
 
 	test_num = 0;
@@ -615,7 +826,7 @@ void * print(void*arg)
 
 void print_help(void)
 {
-	printf("-s (1-12)  1:sm2_en 2:sm2_de 3:sm2_sign 4:sm2_verify 5:sm3_dgst 6:sm3_hmac 7:sm4_cbc 8:sm4_ecb 9:sm4_ctr\n");
+	printf("-s (1-12)  1:sm2_en 2:sm2_de 3:sm2_sign 4:sm2_verify 5:sm3_dgst 6:sm3_hmac 7:sm4_cbc 8:sm4_ecb 9:sm4_ctr 10:kernel_sm4_cbc\n");
 	printf("-t          test_time\n");
 	printf("-n  num     test_num\n");
 	printf("-l          test_size\n");
@@ -661,6 +872,7 @@ int main(int argc, char *argv[])
 					case 7: test_sm4_cbc = 1;break;
 					case 8: test_sm4_ecb = 1;break;
 					case 9: test_sm4_ctr = 1;break;
+					case 10:test_kernel_sm4_cbc = 1;break;
 					default:break;
 				}
 				flag = 0;

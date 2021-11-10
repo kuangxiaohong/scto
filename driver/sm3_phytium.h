@@ -53,7 +53,7 @@ typedef struct
 	long dma_paddr;
 	u8 ipad[64];
 	u8 opad[64];
-	u8 dma_buf[PHYTIUM_DMA_BUF_SIZE + 256];
+	u8 dma_buf[PHYTIUM_SM3_DMA_BUF_SIZE + 256];
 } phytium_sm3_context;
 
 /*API*/

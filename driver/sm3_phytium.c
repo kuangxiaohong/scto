@@ -333,10 +333,10 @@ static int phytium_sm3_dma_update(struct shash_desc *desc, const u8 *data, unsig
 
 	atomic_inc(&scto.wait_count);
 	while(calclen || left){	
-		if(likely(calclen <= (PHYTIUM_DMA_BUF_SIZE - left))){
+		if(likely(calclen <= (PHYTIUM_SM3_DMA_BUF_SIZE - left))){
 			buf_len = calclen + left;
 		}else{
-			buf_len = PHYTIUM_DMA_BUF_SIZE;
+			buf_len = PHYTIUM_SM3_DMA_BUF_SIZE;
 		}
 
 		src = (u32*)((long)data + offset);

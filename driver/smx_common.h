@@ -7,10 +7,16 @@
 #define SCTO_REGISTER_SELF	(1)
 //0-user space mode; 1-kernel space mode
 #define SCTO_KERNEL_MODE	(0)
+
+#if SCTO_KERNEL_MODE
+#define SCTO_DESC_NUM	(1)
+#define PER_DESC_DMA_BUF_SIZE	(4096)
+#else
 //256, 512, 1024, 2048, 4096, 8192, 16384, 32768
 #define SCTO_DESC_NUM	(16384)
 //256,4096, 8192, 16384, 32768, 65536
 #define PER_DESC_DMA_BUF_SIZE	(65536)
+#endif
 
 
 
@@ -29,7 +35,12 @@
 #define PKE_BASE_ADDR				(0x5000)
 
 
-#define PHYTIUM_DMA_BUF_SIZE             (0x100000)
+#define PHYTIUM_SM3_DMA_BUF_SIZE             (0x100000)
+#ifdef D2000
+#define PHYTIUM_SM4_DMA_BUF_SIZE             (0x100000)
+#else
+#define PHYTIUM_SM4_DMA_BUF_SIZE             (0x100)
+#endif
 
 static inline u32 swap32(u32 val)
 {
