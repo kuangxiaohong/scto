@@ -474,10 +474,10 @@ int sm4_crypt(struct skcipher_request *req, void (*fn)(phytium_sm4_context *, si
 	len -= left;
 
 	while(len){	
-		if(likely(len <= PHYTIUM_DMA_BUF_SIZE)){
+		if(likely(len <= PHYTIUM_SM4_DMA_BUF_SIZE)){
 			buf_len = len;
 		}else{
-			buf_len = PHYTIUM_DMA_BUF_SIZE;
+			buf_len = PHYTIUM_SM4_DMA_BUF_SIZE;
 		}
 
 		if(likely(src_align_flag)){
@@ -537,10 +537,10 @@ int phytium_sm4_ecb(struct skcipher_request *req, int cryptomode)
 	atomic_inc(&scto.wait_count);
 	mutex_lock(&ctx->ctx_lock);
 	while(len){	
-		if(likely(len <= PHYTIUM_DMA_BUF_SIZE)){
+		if(likely(len <= PHYTIUM_SM4_DMA_BUF_SIZE)){
 			buf_len = len;
 		}else{
-			buf_len = PHYTIUM_DMA_BUF_SIZE;
+			buf_len = PHYTIUM_SM4_DMA_BUF_SIZE;
 		}
 
 		if(likely(src_align_flag)){
@@ -618,10 +618,10 @@ int phytium_sm4_cbc(struct skcipher_request *req, int cryptomode)
 	atomic_inc(&scto.wait_count);
 	mutex_lock(&ctx->ctx_lock);
 	while(len){	
-		if(len <= PHYTIUM_DMA_BUF_SIZE){
+		if(len <= PHYTIUM_SM4_DMA_BUF_SIZE){
 			buf_len = len;
 		}else{
-			buf_len = PHYTIUM_DMA_BUF_SIZE;
+			buf_len = PHYTIUM_SM4_DMA_BUF_SIZE;
 		}
 
 		if(likely(src_align_flag)){
@@ -726,10 +726,10 @@ int phytium_sm4_ctr(struct skcipher_request *req)
 
 	atomic_inc(&scto.wait_count);
 	while(len){	
-		if(likely(len <= PHYTIUM_DMA_BUF_SIZE)){
+		if(likely(len <= PHYTIUM_SM4_DMA_BUF_SIZE)){
 			buf_len = len;
 		}else{
-			buf_len = PHYTIUM_DMA_BUF_SIZE;
+			buf_len = PHYTIUM_SM4_DMA_BUF_SIZE;
 		}
 
 		if(likely(src_align_flag)){
