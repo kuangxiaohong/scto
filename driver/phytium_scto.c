@@ -167,7 +167,7 @@ static u32 trng_wait_till_ready(void)
 	u32 count = 0;
 
 	//wait till done
-	while(scto.trng_reg->fifo_sr & 0x100){
+	while(scto.trng_reg->fifo_sr & 0x1000000){
 		if(unlikely(count++ > 1024))
 			schedule();
 
@@ -176,7 +176,7 @@ static u32 trng_wait_till_ready(void)
 
 			scto.trng_reg->sr = 7;   //clear flag
 
-			scto.trng_reg->rtcr = 1;
+			scto.trng_reg->rtcr = 0;
 
 			dsb(sy);
 
@@ -190,7 +190,7 @@ static u32 trng_wait_till_ready(void)
 	}
 
 	//return counts of random in FIFO
-	return (scto.trng_reg->fifo_sr & 0xFC);
+	return ((scto.trng_reg->fifo_sr & 0xFC0000) >> 16);
 }
 
 
@@ -200,6 +200,8 @@ int get_rand(char *a, u32 byteLen)
 
 	if(byteLen == 0)
 		return 0;
+
+	scto.trng_reg->cr = 0x1F;
 
 	rng_data_len = trng_wait_till_ready();
 	while(rng_data_len){
@@ -218,6 +220,8 @@ int get_rand(char *a, u32 byteLen)
 			break;
 		}
 	}
+
+	scto.trng_reg->cr = 0x1E;
 
 	return count;
 }
@@ -439,8 +443,7 @@ static int scto_probe(struct platform_device *pdev)
 	scto.smx_reg->cfg = 0;
 	scto.trng_reg->cr = 0x1E;
 	scto.trng_reg->sr = 7;
-	scto.trng_reg->rtcr = 1;
-	scto.trng_reg->cr = 0x1F;
+	scto.trng_reg->rtcr = 0;
 
 	atomic_set(&scto.wait_count, 0);
 	mutex_init(&scto.scto_lock);
