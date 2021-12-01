@@ -201,8 +201,6 @@ int get_rand(char *a, u32 byteLen)
 	if(byteLen == 0)
 		return 0;
 
-	scto.trng_reg->cr = 0x1F;
-
 	rng_data_len = trng_wait_till_ready();
 	while(rng_data_len){
 		rng_data = scto.trng_reg->dr;
@@ -221,7 +219,6 @@ int get_rand(char *a, u32 byteLen)
 		}
 	}
 
-	scto.trng_reg->cr = 0x1E;
 
 	return count;
 }
@@ -444,6 +441,7 @@ static int scto_probe(struct platform_device *pdev)
 	scto.trng_reg->cr = 0x1E;
 	scto.trng_reg->sr = 7;
 	scto.trng_reg->rtcr = 0;
+	scto.trng_reg->cr = 0x1F;
 
 	atomic_set(&scto.wait_count, 0);
 	mutex_init(&scto.scto_lock);
