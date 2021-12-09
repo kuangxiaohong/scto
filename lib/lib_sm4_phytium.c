@@ -105,6 +105,7 @@ static int phytium_sm4_ctr(int desc_id, uint8_t*in, uint32_t len, uint8_t*out)
 	long offset = 0, buf_len, ctr_len, i;
 	uint8_t tmp, *iv;
 	uint32_t num;
+	int over = 0;
 	phytium_sm4_context *ctx = &phytium_desc_start[desc_id / (0x400000 / sizeof(phytium_scto_context))][desc_id & ((0x400000 / sizeof(phytium_scto_context)) - 1)].psm4_ctx;
 
 	if(unlikely(len == 0)){
@@ -153,11 +154,13 @@ static int phytium_sm4_ctr(int desc_id, uint8_t*in, uint32_t len, uint8_t*out)
 
 			if(tmp > iv[i]){
 				ctr_len ++;
+				if(i == 12)
+					over = 1;
 			}else if(!ctr_len){
 				break;
 			}
 		}
-		if(unlikely(ctr_len)){
+		if(unlikely(over)){
 			ctr_len = swap32(*(uint32_t*)(&iv[12]));
 			ctr_len <<= 4;
 			*(uint32_t*)(&iv[12]) = 0;

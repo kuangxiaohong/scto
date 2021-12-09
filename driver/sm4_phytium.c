@@ -680,6 +680,7 @@ int phytium_sm4_ctr(struct skcipher_request *req)
 	u8 tmp;
 	int src_align_flag, dst_align_flag, src_nents, dst_nents, left, fill;
 	u8 temp[16], tempiv[16];
+	int over = 0;
 
 	len = req->cryptlen;
 	if(unlikely(len == 0)){
@@ -754,11 +755,13 @@ int phytium_sm4_ctr(struct skcipher_request *req)
 
 			if(tmp > req->iv[i]){
 				ctr_len ++;
+				if(i == 12)
+					over = 1;
 			}else if(!ctr_len){
 				break;
 			}
 		}
-		if(unlikely(ctr_len)){
+		if(unlikely(over)){
 			ctr_len = swap32(*((u32*)&req->iv[12]));
 			ctr_len <<= 4;
 			*((u32*)&req->iv[12]) = 0;
