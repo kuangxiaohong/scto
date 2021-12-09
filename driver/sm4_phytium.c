@@ -762,6 +762,7 @@ int phytium_sm4_ctr(struct skcipher_request *req)
 			}
 		}
 		if(unlikely(over)){
+			over = 0;
 			ctr_len = swap32(*((u32*)&req->iv[12]));
 			ctr_len <<= 4;
 			*((u32*)&req->iv[12]) = 0;

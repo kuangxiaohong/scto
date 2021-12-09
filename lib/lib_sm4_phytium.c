@@ -161,6 +161,7 @@ static int phytium_sm4_ctr(int desc_id, uint8_t*in, uint32_t len, uint8_t*out)
 			}
 		}
 		if(unlikely(over)){
+			over = 0;
 			ctr_len = swap32(*(uint32_t*)(&iv[12]));
 			ctr_len <<= 4;
 			*(uint32_t*)(&iv[12]) = 0;
